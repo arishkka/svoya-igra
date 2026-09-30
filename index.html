@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Своя игра. Лексика</title>
+<style>
+  :root {
+    --bg: #10211f;
+    --board: #17312e;
+    --cell: #1f5c57;
+    --cell-used: #2a3332;
+    --gold: #e4c56a;
+    --paper: #fbf8f3;
+    --ink: #1c2b33;
+    --muted: #c9d4d1;
+    --line: rgba(255,255,255,.12);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--paper); font-family: Georgia, "Times New Roman", serif; }
+  button { font-family: inherit; }
+  .screen { min-height: 100vh; display: flex; flex-direction: column; padding: 22px 28px 18px; }
+  header { display: flex; justify-content: space-between; align-items: end; gap: 20px; margin-bottom: 16px; }
+  .kicker { font-family: Arial, sans-serif; letter-spacing: .16em; text-transform: uppercase; font-size: 12px; color: var(--gold); font-weight: 700; }
+  h1 { margin: 4px 0 0; font-size: 32px; font-weight: 700; }
+  .teams { display: flex; gap: 10px; align-items: stretch; }
+  .team { background: var(--board); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px 10px; min-width: 150px; }
+  .team input { width: 100%; background: transparent; border: 0; color: var(--paper); font-size: 16px; font-family: Arial, sans-serif; margin-bottom: 4px; }
+  .pts { font-size: 28px; color: var(--gold); line-height: 1; }
+  .board { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .cat, .cell { border: 0; border-radius: 12px; color: white; cursor: pointer; }
+  .cat { background: #0c1918; color: var(--gold); font-size: 20px; font-weight: 700; min-height: 72px; border: 1px solid var(--line); }
+  .cell { background: var(--cell); font-size: 32px; font-weight: 700; min-height: 78px; }
+  .cell:hover { filter: brightness(1.08); }
+  .cell.used { background: var(--cell-used); color: #66716f; cursor: default; }
+  .overlay { position: fixed; inset: 0; background: #0d1c1a; display: none; flex-direction: column; padding: 28px 40px 24px; }
+  .overlay.on { display: flex; }
+  .q-top { display: flex; justify-content: space-between; color: var(--gold); font-family: Arial, sans-serif; font-size: 14px; letter-spacing: .08em; text-transform: uppercase; }
+  .question { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 42px; line-height: 1.25; max-width: 1000px; margin: 0 auto; }
+  .answer { display: none; margin-top: 10px; font-size: 28px; color: var(--gold); text-align: center; }
+  .answer.on { display: block; }
+  .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
+  .actions button, .back { background: var(--paper); color: var(--ink); border: 0; border-radius: 12px; padding: 14px 18px; font-size: 18px; cursor: pointer; }
+  .back { background: transparent; color: var(--paper); border: 1px solid var(--line); }
+  .hint { text-align: center; color: var(--muted); font-family: Arial, sans-serif; font-size: 13px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="screen">
+  <header>
+    <div>
+      <div class="kicker">На доску</div>
+      <h1>Своя игра</h1>
+    </div>
+    <div class="teams" id="teams"></div>
+  </header>
+  <div class="board" id="board"></div>
+</div>
+<div class="overlay" id="overlay">
+  <div class="q-top"><span id="qcat"></span><span id="qpts"></span></div>
+  <div class="question" id="question"></div>
+  <div class="answer" id="answer"></div>
+  <div class="actions" id="actions"></div>
+  <div class="hint">Сначала ответ вслух. Потом «показать». Балл жмётся команде, которая попала.</div>
+</div>
+<script>
+const cats = [
+  { name: "Характер", items: [
+    [100, "На собрании он был не согласен, но промолчал, чтобы не спорить с большинством. Кто он?", "конформист"],
+    [200, "Утром защищал новые экзамены, вечером уже был против: так сказало начальство. Кто он?", "оппортунист"],
+    [300, "Обычную кофейню назвали «Империей вкуса». Какое это название?", "претенциозное"],
+    [400, "Перед сдачей она сверила каждый источник и каждую сноску. Какая это проверка?", "скрупулёзная"],
+    [500, "Художник нарочно шокирует публику. Какой это глагол?", "эпатировать"]
+  ]},
+  { name: "В голове", items: [
+    [100, "Разбирая пример, она вдруг поняла правило: оно стало логичным. Как называется такое понимание?", "инсайт"],
+    [200, "В силлабусе критерии оценивания написаны прямо и явно. Какие они?", "эксплицитные"],
+    [300, "Письмо вежливое, но критика в нём не сказана, а только подразумевается. Какая она?", "имплицитная"],
+    [400, "Конфликт в коллективе уже есть, но снаружи пока не проявляется. Какой он?", "латентный"],
+    [500, "Он считает, что всё уже предрешено, и не берёт ответственность за свою жизнь. Как называется такая вера?", "фатализм"]
+  ]},
+  { name: "Довод", items: [
+    [100, "Информацию из соцсетей нужно проверить на достоверность, прежде чем пересылать. Что с ней сделать?", "верифицировать"],
+    [200, "Опрос двадцати друзей нельзя считать выборкой всех студентов. Какой она не является?", "репрезентативной"],
+    [300, "Кто больше читает, тот лучше учится: изменение одного идёт вместе с изменением другого. Как называется такая связь?", "корреляция"],
+    [400, "Для доклада оставили только источники, которые относятся к вопросу. Какие они?", "релевантные"],
+    [500, "Результаты одной группы перенесли на всех студентов. Какой это глагол?", "экстраполировать"]
+  ]},
+  { name: "Люди", items: [
+    [100, "После скандала коллеги перестали с ним общаться. Чему он подвергся?", "остракизму"],
+    [200, "Спор решили без суда: помог нейтральный посредник. Кто это?", "медиатор"],
+    [300, "Два закона противоречат друг другу, и непонятно, какой применять. Что возникло?", "коллизия"],
+    [400, "На человека повесили позорный ярлык, и он боится обращаться за помощью. Как это называется?", "стигматизация"],
+    [500, "Меры приняли заранее: так дешевле, чем ликвидировать последствия. Какие это меры?", "превентивные"]
+  ]},
+  { name: "Тон и язык", items: [
+    [100, "Опаздывать на защиту диплома считается дурным тоном. Как это называется?", "моветон"],
+    [200, "В тексте стоят «свободная вакансия» и «памятный сувенир»: смысл повторён лишний раз. Что это?", "плеоназм"],
+    [300, "Вместо «сокращений» написали «оптимизация штата». Что это за смягчение?", "эвфемизм"],
+    [400, "Даже опытный лектор боится выступать перед аудиторией. Как называется этот страх?", "глоссофобия"],
+    [500, "Довод звучит убедительно, но рассуждение логически ложное. Что это?", "софизм"]
+  ]}
+];
+const teams = [{ name: "Команда 1", score: 0 }, { name: "Команда 2", score: 0 }];
+let open = null;
+function drawTeams() {
+  const box = document.getElementById("teams");
+  box.innerHTML = "";
+  teams.forEach((t) => {
+    const el = document.createElement("div");
+    el.className = "team";
+    el.innerHTML = `<input value="${t.name}" aria-label="название команды" /><div class="pts">${t.score}</div>`;
+    el.querySelector("input").oninput = e => { t.name = e.target.value; };
+    box.appendChild(el);
+  });
+  const add = document.createElement("button");
+  add.className = "back";
+  add.textContent = teams.length < 4 ? "+ команда" : "";
+  add.style.display = teams.length < 4 ? "inline-block" : "none";
+  add.onclick = () => { teams.push({ name: "Команда " + (teams.length + 1), score: 0 }); drawTeams(); if (open) drawActions(); };
+  box.appendChild(add);
+}
+function drawBoard() {
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+  cats.forEach(c => {
+    const h = document.createElement("button");
+    h.className = "cat";
+    h.textContent = c.name;
+    h.disabled = true;
+    board.appendChild(h);
+  });
+  for (let row = 0; row < 5; row++) {
+    cats.forEach((c, ci) => {
+      const [pts] = c.items[row];
+      const b = document.createElement("button");
+      b.className = "cell" + (c.items[row].used ? " used" : "");
+      b.textContent = c.items[row].used ? "" : pts;
+      b.disabled = !!c.items[row].used;
+      b.onclick = () => showQ(ci, row);
+      board.appendChild(b);
+    });
+  }
+}
+function showQ(ci, row) {
+  open = { ci, row };
+  const [pts, q, a] = cats[ci].items[row];
+  document.getElementById("qcat").textContent = cats[ci].name;
+  document.getElementById("qpts").textContent = pts;
+  document.getElementById("question").textContent = q;
+  const ans = document.getElementById("answer");
+  ans.textContent = a;
+  ans.classList.remove("on");
+  drawActions();
+  document.getElementById("overlay").classList.add("on");
+}
+function drawActions() {
+  const box = document.getElementById("actions");
+  box.innerHTML = "";
+  const show = document.createElement("button");
+  show.textContent = "Показать ответ";
+  show.onclick = () => document.getElementById("answer").classList.add("on");
+  box.appendChild(show);
+  teams.forEach((t, i) => {
+    const b = document.createElement("button");
+    b.textContent = t.name + " +";
+    b.onclick = () => award(i);
+    box.appendChild(b);
+  });
+  const none = document.createElement("button");
+  none.className = "back";
+  none.textContent = "Никто";
+  none.onclick = () => award(-1);
+  box.appendChild(none);
+}
+function award(teamIndex) {
+  if (!open) return;
+  const item = cats[open.ci].items[open.row];
+  if (!item.used && teamIndex >= 0) teams[teamIndex].score += item[0];
+  item.used = true;
+  open = null;
+  document.getElementById("overlay").classList.remove("on");
+  drawTeams();
+  drawBoard();
+}
+drawTeams();
+drawBoard();
+</script>
+</body>
+</html>
